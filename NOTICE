@@ -1,0 +1,12 @@
+This repository contains derivative work based on:
+  Austin Zheng's Cormorant (https://github.com/austinzheng/Cormorant)
+
+Original copyright:
+  Cormorant © 2015-2016 Austin Zheng
+
+License:
+  Eclipse Public License 1.0 (EPL-1.0)
+  Full license text: ./epl-v10.html
+
+Porting and modernization changes in this repository are maintained by
+Sinan Karasu and contributors, and remain distributed under EPL-1.0.
