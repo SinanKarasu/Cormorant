@@ -101,6 +101,25 @@ class TestReadStringBuiltin : InterpreterTest {
     expectInputToReadString(".read-string", toEvalTo: .builtInFunction(.ReadString))
   }
 
+  /// .read-string should discard the next reader form when #_ is present.
+  func testReaderDiscard() {
+    expectInputToReadString("#_1 2", toEvalTo: 2)
+    expectInputToReadString("(1 #_2 3)", toEvalTo: list(containing: 1, 3))
+  }
+
+  /// .read-string should resolve reader-conditionals using the host feature set (currently :clj).
+  func testReaderConditional() {
+    expectInputToReadString("#?(:clj 1 :cljs 2)", toEvalTo: 1)
+    expectInputToReadString("#?(:cljs 2 :default 9)", toEvalTo: 9)
+  }
+
+  /// .read-string should support #?@ by splicing a selected vector/list branch into the surrounding collection.
+  func testReaderConditionalSplice() {
+    let listSym = symbol("list")
+    expectInputToReadString("(list #?@(:clj [1 2] :cljs [3 4]))",
+                            toEvalTo: list(containing: .symbol(listSym), 1, 2))
+  }
+
   /// .read-string should reject non-string arguments.
   func testNonStringArguments() {
     expectInvalidArgumentErrorFrom("(.read-string nil)")

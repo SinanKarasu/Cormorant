@@ -25,6 +25,8 @@ enum SyntaxToken {
   case hashQuote                  // hash-quote '#''
   case hashLeftParentheses        // hash-left parentheses '#('
   case hashUnderscore             // hash-underscore '#_'
+  case hashQuestion               // hash-question '#?'
+  case hashQuestionAt             // hash-question-at '#?@'
 }
 
 /// Tokens that come out of the lex() function, intended as input to the parser.
@@ -338,6 +340,14 @@ private struct Lexer {
     case "_":           // Ignore next form
       index = str.indexAdvancedTwice(after: index)
       return .Just(.syntax(.hashUnderscore))
+    case "?":           // Reader conditional (#? and #?@)
+      let afterQuestion = str.indexAdvancedTwice(after: index)
+      if afterQuestion < str.endIndex && str[afterQuestion] == "@" {
+        index = str.index(after: afterQuestion)
+        return .Just(.syntax(.hashQuestionAt))
+      }
+      index = afterQuestion
+      return .Just(.syntax(.hashQuestion))
     default:
       return .Error(ReadError(.InvalidDispatchMacroError))
     }

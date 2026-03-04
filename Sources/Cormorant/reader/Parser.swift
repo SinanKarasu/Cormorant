@@ -24,6 +24,9 @@ private enum NextFormTreatment {
   case unquoteSplice
 }
 
+private let readerConditionalHostFeatures: Set<String> = ["clj"]
+private let readerConditionalDefaultFeature = "default"
+
 /// Given an array containing all lexical tokens, a starting index, and a type of collection (list, vector, or map), go
 /// through the array to collect and return all tokens that make up the collection whose left delimiter is found at the
 /// starting index. This function also updates the index to the position immediately following the token which closes
@@ -84,6 +87,136 @@ private func collect(tokens: [LexToken], idx: inout Int, type: TokenCollectionTy
     }
   }
   return count == 0 ? .Just(buffer) : .Error(ReadError(.MismatchedDelimiterError))
+}
+
+/// Given a value used as a reader-conditional feature key, return its canonical feature name if valid.
+private func readerConditionalFeatureName(from value: Value, _ ctx: Context) -> String? {
+  switch value {
+  case let .keyword(keyword):
+    return keyword.nameComponent(ctx)
+  case let .symbol(symbol):
+    return symbol.nameComponent(ctx)
+  default:
+    return nil
+  }
+}
+
+/// Given key/value pairs from a reader-conditional payload, pick the active host branch.
+private func selectReaderConditionalBranch(_ forms: [Value], _ ctx: Context) -> ReadOptional<Value?> {
+  guard forms.count % 2 == 0 else {
+    return .Error(ReadError(.MapKeyValueMismatchError))
+  }
+
+  var defaultBranch : Value? = nil
+  var i = 0
+  while i < forms.count {
+    guard let featureName = readerConditionalFeatureName(from: forms[i], ctx) else {
+      return .Error(ReadError(.InvalidDispatchMacroError))
+    }
+
+    let form = forms[i + 1]
+    if readerConditionalHostFeatures.contains(featureName) {
+      return .Just(form)
+    }
+    if featureName == readerConditionalDefaultFeature && defaultBranch == nil {
+      defaultBranch = form
+    }
+
+    i += 2
+  }
+
+  if let defaultBranch = defaultBranch {
+    return .Just(defaultBranch)
+  }
+  return .Just(nil)
+}
+
+/// Parse the form following #? or #?@ and return the selected branch for the current host feature set.
+private func parseReaderConditional(tokens: [LexToken], idx: inout Int, _ ctx: Context) -> ReadOptional<Value?> {
+  let conditionalStart = idx + 1
+  guard conditionalStart < tokens.count else {
+    return .Error(ReadError(.InvalidDispatchMacroError))
+  }
+  guard tokens[conditionalStart].isA(.leftParentheses) else {
+    return .Error(ReadError(.InvalidDispatchMacroError))
+  }
+
+  var conditionalEnd = conditionalStart
+  return collect(tokens: tokens, idx: &conditionalEnd, type: .List).then { conditionalTokens in
+    idx = conditionalEnd
+    return process(tokens: conditionalTokens, ctx).then {
+      selectReaderConditionalBranch($0, ctx)
+    }
+  }
+}
+
+/// Skip one reader form and update idx to point to the next token after the discarded form.
+private func discardNextForm(in tokens: [LexToken], idx: inout Int) -> ReadOptional<Void> {
+  guard idx < tokens.count else {
+    return .Error(ReadError(.MismatchedReaderMacroError))
+  }
+
+  func skipHashCollection(openings: [SyntaxToken], closing: SyntaxToken) -> ReadOptional<Void> {
+    var depth = 1
+    var cursor = idx + 1
+    while cursor < tokens.count {
+      let token = tokens[cursor]
+      if openings.contains(where: { token.isA($0) }) {
+        depth += 1
+      } else if token.isA(closing) {
+        depth -= 1
+        if depth == 0 {
+          idx = cursor + 1
+          return .Just(())
+        }
+      }
+      cursor += 1
+    }
+    return .Error(ReadError(.MismatchedDelimiterError))
+  }
+
+  switch tokens[idx] {
+  case let t where t.isA(.leftParentheses):
+    var collectionEnd = idx
+    return collect(tokens: tokens, idx: &collectionEnd, type: .List).then { _ in
+      idx = collectionEnd + 1
+      return .Just(())
+    }
+  case let t where t.isA(.leftSquareBracket):
+    var collectionEnd = idx
+    return collect(tokens: tokens, idx: &collectionEnd, type: .Vector).then { _ in
+      idx = collectionEnd + 1
+      return .Just(())
+    }
+  case let t where t.isA(.leftBrace):
+    var collectionEnd = idx
+    return collect(tokens: tokens, idx: &collectionEnd, type: .Map).then { _ in
+      idx = collectionEnd + 1
+      return .Just(())
+    }
+  case let t where t.isA(.hashLeftParentheses):
+    return skipHashCollection(openings: [.leftParentheses, .hashLeftParentheses], closing: .rightParentheses)
+  case let t where t.isA(.hashLeftBrace):
+    return skipHashCollection(openings: [.leftBrace, .hashLeftBrace], closing: .rightBrace)
+  case let t where t.isA(.quote) || t.isA(.backquote) || t.isA(.tilde) || t.isA(.tildeAt) || t.isA(.at) || t.isA(.hashQuote) || t.isA(.hashUnderscore):
+    idx += 1
+    return discardNextForm(in: tokens, idx: &idx)
+  case let t where t.isA(.hashQuestion) || t.isA(.hashQuestionAt):
+    idx += 1
+    guard idx < tokens.count && tokens[idx].isA(.leftParentheses) else {
+      return .Error(ReadError(.InvalidDispatchMacroError))
+    }
+    var conditionalEnd = idx
+    return collect(tokens: tokens, idx: &conditionalEnd, type: .List).then { _ in
+      idx = conditionalEnd + 1
+      return .Just(())
+    }
+  case let t where t.isA(.rightParentheses) || t.isA(.rightSquareBracket) || t.isA(.rightBrace):
+    return .Error(ReadError(.BadStartTokenError))
+  default:
+    idx += 1
+    return .Just(())
+  }
 }
 
 /// Given a reader form and the 'wrapStack' array, pop a wrap command off the array and wrap the reader form within the
@@ -174,7 +307,46 @@ private func process(tokens: [LexToken], _ ctx: Context) -> ReadOptional<[Value]
         wrapStack.append(.deref)
       case .hashQuote:
         wrapStack.append(.varForm)
-      case .hashLeftBrace, .hashLeftParentheses, .hashUnderscore:
+      case .hashUnderscore:
+        var discardIndex = idx + 1
+        switch discardNextForm(in: tokens, idx: &discardIndex) {
+        case .Just:
+          // -1 because the loop body increments idx at the end of the iteration.
+          idx = discardIndex - 1
+        case let .Error(err):
+          return .Error(err)
+        }
+      case .hashQuestion, .hashQuestionAt:
+        let shouldSplice = (s == .hashQuestionAt)
+        switch parseReaderConditional(tokens: tokens, idx: &idx, ctx) {
+        case let .Just(selectedForm):
+          if let selectedForm = selectedForm {
+            if shouldSplice {
+              switch selectedForm {
+              case let .vector(items):
+                for item in items {
+                  buffer.append(wrappedConsItem(item, &wrapStack))
+                }
+              case let .seq(list):
+                for item in SeqIterator(list) {
+                  switch item {
+                  case let .Just(value):
+                    buffer.append(wrappedConsItem(value, &wrapStack))
+                  case .Error:
+                    return .Error(ReadError(.UnimplementedFeatureError))
+                  }
+                }
+              default:
+                return .Error(ReadError(.InvalidDispatchMacroError))
+              }
+            } else {
+              buffer.append(wrappedConsItem(selectedForm, &wrapStack))
+            }
+          }
+        case let .Error(err):
+          return .Error(err)
+        }
+      case .hashLeftBrace, .hashLeftParentheses:
         // TODO: Implement support for all of these
         return .Error(ReadError(.UnimplementedFeatureError))
       }
@@ -319,7 +491,22 @@ func parse(tokens: [LexToken], _ ctx: Context) -> ReadOptional<Value> {
       return createTopLevelReaderMacro(.deref)
     case .hashQuote:
       return createTopLevelReaderMacro(.varForm)
-    case .hashLeftBrace, .hashLeftParentheses, .hashUnderscore:
+    case .hashUnderscore:
+      var discardIndex = 1
+      switch discardNextForm(in: tokens, idx: &discardIndex) {
+      case .Just:
+        guard discardIndex < tokens.count else {
+          return .Error(ReadError(.EmptyInputError))
+        }
+        return parse(tokens: Array(tokens[discardIndex..<tokens.count]), ctx)
+      case let .Error(err):
+        return .Error(err)
+      }
+    case .hashQuestion, .hashQuestionAt:
+      return parseReaderConditional(tokens: tokens, idx: &index, ctx).then {
+        .Just($0 ?? .nilValue)
+      }
+    case .hashLeftBrace, .hashLeftParentheses:
       // TODO: Implement support for all of these
       return .Error(ReadError(.UnimplementedFeatureError))
     }
