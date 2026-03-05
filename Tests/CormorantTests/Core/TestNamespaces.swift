@@ -279,6 +279,28 @@ class TestNsSymbol : InterpreterTest {
   }
 }
 
+/// Test the lightweight Clojure-compatible `ns` shim macro.
+class TestNsMacroCompatibility : InterpreterTest {
+
+  /// `ns` should switch namespaces and keep core referred in the new namespace.
+  func testNsSwitchesNamespaceAndKeepsCoreFunctions() {
+    XCTAssert(interpreter.currentNamespace.name == "user",
+              "Current namespace expected to be 'user', but was '\(interpreter.currentNamespace.name)'")
+    expectThat("(ns emmy.env)", shouldEvalTo: .nilValue)
+    XCTAssert(interpreter.currentNamespace.name == "emmy.env",
+              "Current namespace expected to be 'emmy.env', but was '\(interpreter.currentNamespace.name)'")
+    expectThat("(+ 1 2)", shouldEvalTo: 3)
+    expectThat("core/*ns*", shouldEvalTo: .namespace(interpreter.currentNamespace))
+  }
+
+  /// `ns` should accept docstring/options forms without evaluating option payloads yet.
+  func testNsAcceptsOptions() {
+    expectThat("(ns emmy.env \"doc\" (:require #?(:cljs [foo :as f])))", shouldEvalTo: .nilValue)
+    XCTAssert(interpreter.currentNamespace.name == "emmy.env",
+              "Current namespace expected to be 'emmy.env', but was '\(interpreter.currentNamespace.name)'")
+  }
+}
+
 /// Test symbol resolution in the context of namespace support, including resolution of both qualified and unqualified
 /// symbols.
 class TestSymbolNamespacing : InterpreterTest {

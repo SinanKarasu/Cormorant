@@ -27,6 +27,7 @@ internal var APPLY : Value { Value.special(.Apply) }
 /// A type describing all the special forms recognized by the interpreter.
 public enum SpecialForm : String, CustomStringConvertible {
   // Add special forms below. The string is the name of the special form, and takes precedence over all functions, macros, and user defs
+  case Ns = "ns"
   case Quote = "quote"
   case If = "if"
   case Do = "do"
@@ -42,6 +43,7 @@ public enum SpecialForm : String, CustomStringConvertible {
   
   var function : SpecialFormImpl {
     switch self {
+    case .Ns: return sf_ns
     case .Quote: return sf_quote
     case .If: return sf_if
     case .Do: return sf_do
@@ -64,6 +66,38 @@ public enum SpecialForm : String, CustomStringConvertible {
 
 
 // MARK: Special forms
+
+/// Clojure-compatible namespace declaration shim.
+/// For now this switches to the target namespace, refers core, and ignores the rest of the ns options.
+func sf_ns(_ args: Params, _ ctx: Context) -> EvalResult {
+  let fn = "ns"
+  guard let first = args.first else {
+    return .Failure(EvalError.arityError(expected: ">= 1", actual: args.count, fn))
+  }
+  guard case let .symbol(nsSymbol) = first else {
+    return .Failure(EvalError.invalidArgumentError(fn, message: "first argument must be a symbol naming a namespace"))
+  }
+  if !nsSymbol.isUnqualified {
+    return .Failure(EvalError(.QualifiedSymbolMisuseError))
+  }
+
+  switch ctx.interpreter.switchToNamespace(NamespaceName(nsSymbol.unqualified)) {
+  case let .Success(namespace):
+    if let core = ctx.interpreter.namespaces[ctx.interpreter.coreNamespaceName] {
+      if let err = namespace.refer(core) {
+        return .Failure(err)
+      }
+    } else {
+      return .Failure(EvalError(.InvalidNamespaceError))
+    }
+    return .Success(.nilValue)
+  case let .Error(err):
+    return .Failure(err)
+  case .Nil:
+    // switchToNamespace never returns .Nil today, but keep this defensive fallback.
+    return .Success(.nilValue)
+  }
+}
 
 /// Return the argument as its literal value (without performing any evaluation).
 func sf_quote(_ args: Params, _ ctx: Context) -> EvalResult {
