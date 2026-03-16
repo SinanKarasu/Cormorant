@@ -9,6 +9,14 @@
 ; Return the argument.
 (defn identity [x] x)
 
+; Coerce any truthy / falsey value into the canonical boolean values.
+(defn boolean [x]
+  (if x true false))
+
+; Return whether or not the argument is a boolean.
+(defn boolean? [x]
+  (or (true? x) (false? x)))
+
 ; Return the logical opposite of the argument.
 (defn not [x]
   (if x false true))
@@ -44,6 +52,10 @@
     (if xs
       (recur (.conj coll x) (first xs) (next xs))
       (.conj coll x))))
+
+; Insert every item from `from` into the target collection `to`.
+(defn into [to from]
+  (reduce conj to from))
 
 ; Return a random number between 0 (inclusive) and n (defaults to 1) (exclusive).
 (defn rand

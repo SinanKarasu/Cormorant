@@ -72,6 +72,12 @@ class TestFloatingPointParsing : InterpreterTest {
     expectThat("-29128.6812", shouldEvalTo: -29128.6812)
   }
 
+  func testParsingSymbolicValues() {
+    expectThat("##Inf", shouldEvalTo: .float(Double.infinity))
+    expectThat("##-Inf", shouldEvalTo: .float(-Double.infinity))
+    expectThat("(.nan? ##NaN)", shouldEvalTo: true)
+  }
+
   /// The lexer and parser should properly parse floating-point numbers in the context of a collection.
   func testInCollection() {
     expectThat("'(0.00012 3190.0 -1234.5)", shouldEvalTo: list(containing: 0.00012, 3190.0, -1234.5))
@@ -86,6 +92,10 @@ class TestStringParsing : InterpreterTest {
 
   func testParsingNonemptyString() {
     expectThat("\"the quick brown fox\"", shouldEvalTo: .string("the quick brown fox"))
+  }
+
+  func testParsingUnicodeEscapes() {
+    expectThat("\"\\u03bcs\"", shouldEvalTo: .string("\u{03bc}s"))
   }
 
   /// The lexer and parser should properly parse strings in the context of a collection.
@@ -315,6 +325,29 @@ class TestMapParsing : InterpreterTest {
     let c = keyword("c")
     expectThat("{:a {:b :c 1 2} 3 4}", shouldEvalTo:
       map(containing: (.keyword(a), map(containing: (.keyword(b), .keyword(c)), (1, 2))), (3, 4)))
+  }
+}
+
+/// Test how sets are lexed and parsed.
+class TestSetParsing : InterpreterTest {
+  func testParsingEmptySet() {
+    expectThat("#{}", shouldEvalTo: set())
+  }
+
+  func testParsingSet() {
+    expectThat("#{1 2 3}", shouldEvalTo: set(containing: 1, 2, 3))
+  }
+
+  func testParsingSetDeduplicates() {
+    expectThat("#{1 2 1 2 3}", shouldEvalTo: set(containing: 1, 2, 3))
+  }
+
+  func testParsingNestedSet() {
+    let a = keyword("a")
+    let b = keyword("b")
+    expectThat("{:tags #{:a :b}}",
+               shouldEvalTo: map(containing: (.keyword(keyword("tags")),
+                                              set(containing: .keyword(a), .keyword(b)))))
   }
 }
 

@@ -24,6 +24,8 @@ extension Value {
     case let .seq(seq): return seq.hashValue
     case let .vector(v): return v.count == 0 ? 0 : v[0].hashValue
     case let .map(m): return m.count
+    case let .set(s):
+      return s.reduce(0) { $0 ^ $1.hashValue }
     case let .macroLiteral(macro): return macro.hashValue
     case let .functionLiteral(fn): return fn.hashValue
     case let .builtInFunction(bf): return bf.hashValue

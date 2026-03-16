@@ -13,6 +13,7 @@ typealias BuiltInImpl = (Params, Context) -> EvalResult
 internal var LIST : Value { Value.builtInFunction(.List) }
 internal var VECTOR : Value { Value.builtInFunction(.Vector) }
 internal var HASHMAP : Value { Value.builtInFunction(.Hashmap) }
+internal var HASHSET : Value { Value.builtInFunction(.Hashset) }
 internal var CONCAT : Value { Value.builtInFunction(.Concat) }
 internal var SEQ : Value { Value.builtInFunction(.Seq) }
 internal var DEREF : Value { Value.builtInFunction(.Deref) }
@@ -42,6 +43,7 @@ public enum BuiltIn : String, CustomStringConvertible {
   case List = ".list"
   case Vector = ".vector"
   case Hashmap = ".hashmap"
+  case Hashset = ".hashset"
   case Cons = ".cons"
   case First = ".first"
   case Rest = ".rest"
@@ -52,6 +54,7 @@ public enum BuiltIn : String, CustomStringConvertible {
   case Seq = ".seq"
   case LazySeq = ".lazy-seq"
   case Get = ".get"
+  case Contains = ".contains?"
   case Assoc = ".assoc"
   case Dissoc = ".dissoc"
   case Count = ".count"
@@ -107,6 +110,7 @@ public enum BuiltIn : String, CustomStringConvertible {
   case IsSeq = ".seq?"
   case IsVector = ".vector?"
   case IsMap = ".map?"
+  case IsSet = ".set?"
   case IsPos = ".pos?"
   case IsNeg = ".neg?"
   case IsZero = ".zero?"
@@ -160,6 +164,7 @@ public enum BuiltIn : String, CustomStringConvertible {
     case .List: return pr_list
     case .Vector: return pr_vector
     case .Hashmap: return pr_hashmap
+    case .Hashset: return pr_hashset
     case .Cons: return pr_cons
     case .First: return pr_first
     case .Rest: return pr_rest
@@ -170,6 +175,7 @@ public enum BuiltIn : String, CustomStringConvertible {
     case .Seq: return pr_seq
     case .LazySeq: return pr_lazyseq
     case .Get: return pr_get
+    case .Contains: return pr_contains
     case .Assoc: return pr_assoc
     case .Dissoc: return pr_dissoc
     case .Count: return pr_count
@@ -213,6 +219,7 @@ public enum BuiltIn : String, CustomStringConvertible {
     case .IsSeq: return pr_isSeq
     case .IsVector: return pr_isVector
     case .IsMap: return pr_isMap
+    case .IsSet: return pr_isSet
     case .IsPos: return pr_isPos
     case .IsNeg: return pr_isNeg
     case .IsZero: return pr_isZero

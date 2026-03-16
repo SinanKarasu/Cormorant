@@ -119,6 +119,11 @@ class TestDescribing : InterpreterTest {
     expectThat(vectorInput, shouldBeDescribedAs: vectorOutput)
   }
 
+  func testDescribingSet() {
+    expectThat("#{}", shouldBeDescribedAs: "#{}")
+    expectThat("#{1 2 3}", shouldBeDescribedAs: "#{1 2 3}")
+  }
+
   func testDescribingRegex() {
     let regex = rawString(for: 12)
     expectThat(regex, shouldBeDescribedAs: regex)

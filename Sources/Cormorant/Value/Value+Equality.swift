@@ -132,6 +132,10 @@ extension Value {
       if case let .map(right) = that {
         return .Just(left == right)
       }
+    case let .set(left):
+      if case let .set(right) = that {
+        return .Just(left == right)
+      }
     case let .macroLiteral(left):
       if case let .macroLiteral(right) = that {
         return .Just(left === right)

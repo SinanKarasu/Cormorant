@@ -8,6 +8,19 @@
 
 import Foundation
 
+private func floatDescription(_ value: Double) -> String {
+  if value.isNaN {
+    return "##NaN"
+  }
+  if value == Double.infinity {
+    return "##Inf"
+  }
+  if value == -Double.infinity {
+    return "##-Inf"
+  }
+  return value.description
+}
+
 // MARK: Describe
 
 extension SeqType {
@@ -67,6 +80,20 @@ enum Description {
     let final = buffer.joined(separator: " ")
     return .Just("{\(final)}")
   }
+
+  /// Given a set, return a description.
+  static func describe(set: SetType, using ctx: Context? = nil, debug: Bool = false) -> EvalOptional<String> {
+    var buffer: [String] = []
+    for item in set {
+      let result = debug ? item.debugDescribe(ctx) : item.describe(ctx)
+      switch result {
+      case let .Just(item): buffer.append(item)
+      case .Error: return result
+      }
+    }
+    let final = buffer.joined(separator: " ")
+    return .Just("#{\(final)}")
+  }
 }
 
 extension Value {
@@ -98,7 +125,7 @@ extension Value {
     case let .int(int):
       return .Just(int.description)
     case let .float(double):
-      return .Just(double.description)
+      return .Just(floatDescription(double))
     case let .char(char):
       return .Just(charLiteralDesc(char))
     case let .string(str):
@@ -131,6 +158,8 @@ extension Value {
       return Description.describe(vector: vector, using: ctx, debug: false)
     case let .map(map):
       return Description.describe(map: map, using: ctx, debug: false)
+    case let .set(set):
+      return Description.describe(set: set, using: ctx, debug: false)
     case .macroLiteral:
       return .Just("{{macro}}")
     case .functionLiteral:
@@ -155,7 +184,7 @@ extension Value {
     case let .int(int):
       return .Just("Object.int(\(int.description))")
     case let .float(double):
-      return .Just("Object.float(\(double.description))")
+      return .Just("Object.float(\(floatDescription(double)))")
     case let .char(char):
       return .Just("Object.char(\(charLiteralDesc(char)))")
     case let .string(str):
@@ -201,6 +230,14 @@ extension Value {
       switch result {
       case let .Just(desc):
         return .Just("Object.map( \(desc) )")
+      case .Error:
+        return result
+      }
+    case let .set(set):
+      let result = Description.describe(set: set, using: ctx, debug: true)
+      switch result {
+      case let .Just(desc):
+        return .Just("Object.set( \(desc) )")
       case .Error:
         return result
       }

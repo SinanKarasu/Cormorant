@@ -91,6 +91,9 @@ class TestStrBuiltin : InterpreterTest {
   func testFloats() {
     expectThat("(.str 0.001238)", shouldEvalTo: .string("0.001238"))
     expectThat("(.str -9581.928)", shouldEvalTo: .string("-9581.928"))
+    expectThat("(.str ##Inf)", shouldEvalTo: .string("##Inf"))
+    expectThat("(.str ##-Inf)", shouldEvalTo: .string("##-Inf"))
+    expectThat("(.str ##NaN)", shouldEvalTo: .string("##NaN"))
   }
 
   /// .str should properly describe single element lists.

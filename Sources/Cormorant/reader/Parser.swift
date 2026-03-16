@@ -9,7 +9,7 @@
 import Foundation
 
 private enum TokenCollectionType {
-  case List, Vector, Map
+  case List, Vector, Map, Set
 }
 
 private enum NextFormTreatment {
@@ -43,6 +43,7 @@ private func collect(tokens: [LexToken], idx: inout Int, type: TokenCollectionTy
   case let x where x.isA(.leftParentheses) && type == .List: break
   case let x where x.isA(.leftSquareBracket) && type == .Vector: break
   case let x where x.isA(.leftBrace) && type == .Map: break
+  case let x where x.isA(.hashLeftBrace) && type == .Set: break
   default: return .Error(ReadError(.BadStartTokenError))
   }
   // The 'nesting level' of the delimiter token. For example, if we were processing a vector and we saw the tokens
@@ -71,10 +72,10 @@ private func collect(tokens: [LexToken], idx: inout Int, type: TokenCollectionTy
       if count > 0 {
         buffer.append(currentToken)
       }
-    case let x where x.isA(.leftBrace) && type == .Map:
+    case let x where (x.isA(.leftBrace) || x.isA(.hashLeftBrace)) && (type == .Map || type == .Set):
       count += 1
       buffer.append(currentToken)
-    case let x where x.isA(.rightBrace) && type == .Map:
+    case let x where x.isA(.rightBrace) && (type == .Map || type == .Set):
       count -= 1
       if count > 0 {
         buffer.append(currentToken)
@@ -346,7 +347,13 @@ private func process(tokens: [LexToken], _ ctx: Context) -> ReadOptional<[Value]
         case let .Error(err):
           return .Error(err)
         }
-      case .hashLeftBrace, .hashLeftParentheses:
+      case .hashLeftBrace:
+        let theSet = set(with: collect(tokens: tokens, idx: &idx, type: .Set), ctx)
+        switch theSet {
+        case let .Just(set): buffer.append(wrappedConsItem(.set(set), &wrapStack))
+        case let .Error(f): return .Error(f)
+        }
+      case .hashLeftParentheses:
         // TODO: Implement support for all of these
         return .Error(ReadError(.UnimplementedFeatureError))
       }
@@ -441,6 +448,22 @@ private func map(with tokens: ReadOptional<[LexToken]>, _ ctx: Context) -> ReadO
   }
 }
 
+/// Given a list of tokens that corresponds to a single set (e.g. <#{>, <1>, <2>, <}>), build a Set data structure.
+private func set(with tokens: ReadOptional<[LexToken]>, _ ctx: Context) -> ReadOptional<SetType> {
+  return tokens.then { tokens in
+    if tokens.isEmpty {
+      return .Just(SetType())
+    }
+    return process(tokens: tokens, ctx).then { processedForms in
+      var newSet = SetType()
+      for value in processedForms {
+        _ = newSet.insert(value)
+      }
+      return .Just(newSet)
+    }
+  }
+}
+
 /// Given an array of lexical tokens, parse them into a Value data structure, or return an error if this is not
 /// possible.
 func parse(tokens: [LexToken], _ ctx: Context) -> ReadOptional<Value> {
@@ -506,7 +529,9 @@ func parse(tokens: [LexToken], _ ctx: Context) -> ReadOptional<Value> {
       return parseReaderConditional(tokens: tokens, idx: &index, ctx).then {
         .Just($0 ?? .nilValue)
       }
-    case .hashLeftBrace, .hashLeftParentheses:
+    case .hashLeftBrace:
+      return set(with: collect(tokens: tokens, idx: &index, type: .Set), ctx).then { .Just(.set($0)) }
+    case .hashLeftParentheses:
       // TODO: Implement support for all of these
       return .Error(ReadError(.UnimplementedFeatureError))
     }

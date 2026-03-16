@@ -28,6 +28,9 @@ class TestReadStringBuiltin : InterpreterTest {
     expectInputToReadString("0", toEvalTo: 0)
     expectInputToReadString("3.141592", toEvalTo: 3.141592)
     expectInputToReadString("-928187859291", toEvalTo: -928187859291)
+    expectInputToReadString("##Inf", toEvalTo: .float(Double.infinity))
+    expectInputToReadString("##-Inf", toEvalTo: .float(-Double.infinity))
+    expectThat("(.nan? (.read-string \"##NaN\"))", shouldEvalTo: true)
   }
 
   /// .read-string should properly read in symbols.
@@ -60,6 +63,7 @@ class TestReadStringBuiltin : InterpreterTest {
   func testWithStrings() {
     expectInputToReadString("\\\"\\\"", toEvalTo: .string(""))
     expectInputToReadString("\\\"hello world\\\"", toEvalTo: .string("hello world"))
+    expectInputToReadString("\\\"\\\\u03bcs\\\"", toEvalTo: .string("\u{03bc}s"))
   }
 
   /// .read-string should properly read in lists.
@@ -93,6 +97,13 @@ class TestReadStringBuiltin : InterpreterTest {
     let bar = Value.keyword(keyword("bar"))
     expectInputToReadString("{(10 20 foo) {:bar true nil false}}", toEvalTo:
       map(containing: (list(containing: 10, 20, foo), map(containing: (bar, true), (.nilValue, false)))))
+  }
+
+  /// .read-string should properly read in sets.
+  func testWithSets() {
+    expectInputToReadString("#{}", toEvalTo: set())
+    expectInputToReadString("#{1 2 3}", toEvalTo: set(containing: 1, 2, 3))
+    expectInputToReadString("#{1 2 1}", toEvalTo: set(containing: 1, 2))
   }
 
   /// .read-string should properly read in built-in functions.

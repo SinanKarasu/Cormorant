@@ -68,6 +68,7 @@ private struct Lexer {
   static let whitespace = CharacterSet.whitespacesAndNewlines
   static let likeWhitespace = CharacterSet(charactersIn: ",")
   static let canFollowCharacter = CharacterSet(charactersIn: "\\()[]{}\"`@~")
+  static let canTerminateHashLiteral = CharacterSet(charactersIn: "\\()[]{}\"'`;#,@~")
 
   static let formatter = NumberFormatter()
 
@@ -274,7 +275,17 @@ private struct Lexer {
           // An escape character cannot be the last character in the input
           return .Error(ReadError(.InvalidStringEscapeSequenceError))
         }
-        if let escape = escapeCharacter(for: str[str.index(after: current)]) {
+        let next = str[str.index(after: current)]
+        if next == "u" {
+          switch unicodeEscapeCharacter(in: str, startingAt: current) {
+          case let .Just((escape, nextIndex)):
+            buffer.append(escape)
+            current = nextIndex
+          case let .Error(error):
+            return .Error(error)
+          }
+        }
+        else if let escape = escapeCharacter(for: next) {
           // Append the escape character and skip two characters.
           buffer.append(escape)
           current = str.indexAdvancedTwice(after: current)
@@ -291,6 +302,30 @@ private struct Lexer {
     }
     // If we've gotten here we've reached the end of str, but without terminating our string literal.
     return .Error(ReadError(.NonTerminatedStringError))
+  }
+
+  /// Given a string and an index pointing at a backslash that starts a unicode string escape, decode the escape and
+  /// return the resulting character plus the next unread string index.
+  static func unicodeEscapeCharacter(
+    in str: String,
+    startingAt backslashIndex: String.Index
+  ) -> ReadOptional<(Character, String.Index)> {
+    var current = str.index(after: backslashIndex)
+    guard current < str.endIndex, str[current] == "u" else {
+      return .Error(ReadError(.InvalidStringEscapeSequenceError))
+    }
+    str.formIndex(after: &current)
+
+    if let d0 = digitAsNumber(str, &current, .Hexadecimal),
+       let d1 = digitAsNumber(str, &current, .Hexadecimal),
+       let d2 = digitAsNumber(str, &current, .Hexadecimal),
+       let d3 = digitAsNumber(str, &current, .Hexadecimal) {
+      let value = 4096*d0 + 256*d1 + 16*d2 + d3
+      if let scalar = UnicodeScalar(value) {
+        return .Just((Character(scalar), current))
+      }
+    }
+    return .Error(ReadError(.InvalidStringEscapeSequenceError))
   }
 
   /// Given a string and a start index, determine whether the token at the start index is '~' or '~@', returning a
@@ -348,9 +383,29 @@ private struct Lexer {
       }
       index = afterQuestion
       return .Just(.syntax(.hashQuestion))
+    case "#":           // Symbolic values (##Inf, ##-Inf, ##NaN)
+      return consumeSymbolicValue(in: str, index: &index)
     default:
       return .Error(ReadError(.InvalidDispatchMacroError))
     }
+  }
+
+  /// Given a string and a start index which points to the first '#' in a symbolic value literal, consume the full
+  /// token and return it as an unknown token for later number classification.
+  static func consumeSymbolicValue(in str: String, index: inout String.Index) -> ReadOptional<RawLexToken> {
+    // Precondition: str[index] is '#', and str[index + 1] is '#'.
+    var current = str.indexAdvancedTwice(after: index)
+    while current < str.endIndex && !hashLiteralTerminatesToken(str[current]) {
+      str.formIndex(after: &current)
+    }
+
+    let token = String(str[index..<current])
+    guard number(from: token) != nil else {
+      return .Error(ReadError(.InvalidDispatchMacroError))
+    }
+
+    index = current
+    return .Just(.unknown(token))
   }
 
   /// Given a string and a start index, return the character described by the character literal at that position, or
@@ -445,8 +500,24 @@ private struct Lexer {
     return character(c, isMemberOfSet: whitespace) || character(c, isMemberOfSet: canFollowCharacter)
   }
 
+  /// Return whether or not a character terminates a symbolic hash literal such as ##Inf.
+  static func hashLiteralTerminatesToken(_ c: Character) -> Bool {
+    return isWhitespace(char: c) || character(c, isMemberOfSet: canTerminateHashLiteral)
+  }
+
   /// Return a LexToken representing a number type if the input string can be converted into a number, or nil otherwise.
   static func number(from str: String) -> LexToken? {
+    switch str {
+    case "##Inf":
+      return .flPtNumber(Double.infinity)
+    case "##-Inf":
+      return .flPtNumber(-Double.infinity)
+    case "##NaN":
+      return .flPtNumber(Double.nan)
+    default:
+      break
+    }
+
     enum NumberMode { case Integer, FloatingPoint }
     var mode : NumberMode = .Integer
 

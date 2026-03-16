@@ -123,9 +123,8 @@ func pr_isEvalable(args: Params, _ ctx: Context) -> EvalResult {
     return .Failure(EvalError.arityError(expected: "1", actual: args.count, fn))
   }
   // User-defined functions, built-ins, and special forms are eval'able.
-  // TODO: sets should also be eval'able, as they are in Clojure
   switch args[0] {
-  case .symbol, .keyword, .functionLiteral, .vector, .map, .special, .builtInFunction:
+  case .symbol, .keyword, .functionLiteral, .vector, .map, .set, .special, .builtInFunction:
     return .Success(true)
   default:
     return .Success(false)
@@ -200,6 +199,18 @@ func pr_isMap(args: Params, _ ctx: Context) -> EvalResult {
   }
   switch args[0] {
   case .map: return .Success(true)
+  default: return .Success(false)
+  }
+}
+
+/// Return whether or not the argument is a set.
+func pr_isSet(args: Params, _ ctx: Context) -> EvalResult {
+  let fn = ".set?"
+  guard args.count == 1 else {
+    return .Failure(EvalError.arityError(expected: "1", actual: args.count, fn))
+  }
+  switch args[0] {
+  case .set: return .Success(true)
   default: return .Success(false)
   }
 }

@@ -105,6 +105,20 @@ extension Context {
         }
       }
       return .Success(.map(newMap))
+    case let .set(s):
+      var newSet = SetType()
+      for form in s {
+        let result = evaluate(value: form)
+        switch result {
+        case let .Success(result):
+          _ = newSet.insert(result)
+        case .Recur:
+          return .Failure(EvalError(.RecurMisuseError))
+        case .Failure:
+          return result
+        }
+      }
+      return .Success(.set(newSet))
     case .special: return .Failure(EvalError(.EvaluatingSpecialFormError))
     case .readerMacroForm: return .Failure(EvalError(.EvaluatingMacroError))
     }
@@ -127,9 +141,9 @@ extension Context {
       return args.count == 1
         ? pr_nth(args.prefixed(by: first), self)
         : .Failure(EvalError.arityError(expected: "2", actual: args.count, fn))
-    case .map:
-      // Map
-      interpreter.log(.Eval) { "applying arguments: \(args.describe(self)) to map \(first.describe(self))" }
+    case .map, .set:
+      // Map and set
+      interpreter.log(.Eval) { "applying arguments: \(args.describe(self)) to collection \(first.describe(self))" }
       return pr_get(args.prefixed(by: first), self)
     case .symbol, .keyword:
       // Symbol/keyword
@@ -256,6 +270,19 @@ private extension Context {
     }
   }
 
+  /// Evaluate a list with a set in function position.
+  func evaluate(set: SetType, arguments: EvalOptional<SeqType>) -> EvalResult {
+    return arguments.then { arguments in
+      switch collectFunctionParams(arguments, self) {
+      case let .Just(args):
+        let allArgs = args.prefixed(by: .set(set))
+        return pr_get(allArgs, self)
+      case let .Error(f):
+        return .Failure(f)
+      }
+    }
+  }
+
   /// Evaluate a list with a symbol or keyword in function position.
   func evaluate(key: Value, arguments: EvalOptional<SeqType>) -> EvalResult {
     //  ctx.log(.Eval) { "evaluating symbol or keyword in function position: \(describeList(list, ctx))" }
@@ -313,6 +340,8 @@ private extension Context {
             return evaluate(vector: vector, arguments: list.rest)
           case let .map(map):
             return evaluate(map: map, arguments: list.rest)
+          case let .set(set):
+            return evaluate(set: set, arguments: list.rest)
           case let .symbol(symbol):
             return evaluate(key: .symbol(symbol), arguments: list.rest)
           case let .keyword(keyword):

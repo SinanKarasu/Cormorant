@@ -54,6 +54,10 @@ class TestLexing : InterpreterTest {
     expectThat("\"foo\\bbar\"", shouldFailAs: .InvalidStringEscapeSequenceError)
     // Bad escape sequence: '\1'
     expectThat("\"hello\\ntest\\1\"", shouldFailAs: .InvalidStringEscapeSequenceError)
+    // Incomplete unicode escape
+    expectThat("\"\\u03b\"", shouldFailAs: .InvalidStringEscapeSequenceError)
+    // Bad unicode escape digit
+    expectThat("\"\\u03bg\"", shouldFailAs: .InvalidStringEscapeSequenceError)
   }
 
   /// Bad dispatch macros should result in a dispatch macro error.

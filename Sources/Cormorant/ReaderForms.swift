@@ -116,6 +116,11 @@ private enum ReaderHelpers {
     }
     return head
   }
+
+  /// Construct a sequence out of a set.
+  static func sequence(from set: SetType) -> SeqType {
+    return set.isEmpty ? Empty() : SetSequenceView(set)
+  }
 }
 
 private extension Context {
@@ -152,7 +157,7 @@ private extension Context {
         case .UnquoteSplice:
           b.append(rm.form)
         }
-      case .seq, .vector, .map:
+      case .seq, .vector, .map, .set:
         let e = expandSyntaxQuote(for: element, helper)
         switch e {
         case let .Success(expanded):
@@ -225,6 +230,21 @@ private extension Context {
     return .Success(.map(copy))
   }
 
+  /// Given a set (e.g. #{a b}), return an expanded version of the set where all elements have been expanded.
+  func expand(set values: SetType) -> ExpandResult {
+    var copy = SetType()
+    for value in values {
+      let expanded = readerExpand(value)
+      switch expanded {
+      case let .Success(expanded):
+        _ = copy.insert(expanded)
+      case .Failure:
+        return expanded
+      }
+    }
+    return .Success(.set(copy))
+  }
+
   func expand(readerMacro rm: ReaderMacro) -> ExpandResult {
     // First, expand the form contained within the reader macro
     let result = readerExpand(rm.form)
@@ -280,6 +300,8 @@ private extension Context {
       return expand(vector: vector)
     case let .map(map):
       return expand(map: map)
+    case let .set(set):
+      return expand(set: set)
     case .macroLiteral, .functionLiteral, .namespace, .`var`:
       return .Failure(ReadError(.IllegalExpansionFormError))
     }
@@ -340,6 +362,11 @@ private extension Context {
       let result = expand(syntaxQuotedList: ReaderHelpers.sequence(from: m), thisHelper)
       return result.buildIntoFormUsing {
         sequence(APPLY, HASHMAP, .seq(sequence(SEQ, .seq(cons(CONCAT, next: $0)))))
+      }
+    case let .set(s):
+      let result = expand(syntaxQuotedList: ReaderHelpers.sequence(from: s), thisHelper)
+      return result.buildIntoFormUsing {
+        sequence(APPLY, HASHSET, .seq(sequence(SEQ, .seq(cons(CONCAT, next: $0)))))
       }
     case .macroLiteral, .functionLiteral, .namespace, .`var`:
       return .Failure(ReadError(.IllegalExpansionFormError))

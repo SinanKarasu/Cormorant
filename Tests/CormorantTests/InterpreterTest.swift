@@ -43,6 +43,15 @@ func map(containing items: (Value, Value)...) -> Value {
   return .map(buffer)
 }
 
+/// Convenience function: given a bunch of Values, return a set.
+func set(containing items: Value...) -> Value {
+  var buffer = SetType()
+  for item in items {
+    _ = buffer.insert(item)
+  }
+  return .set(buffer)
+}
+
 /// An abstract superclass intended for various interpreter tests.
 class InterpreterTest : XCTestCase {
   var interpreter = Interpreter()

@@ -79,6 +79,65 @@ public struct MapType: Collection, ExpressibleByDictionaryLiteral, Equatable {
   }
 }
 
+/// An opaque type representing a Set data structure.
+public struct SetType: Collection, ExpressibleByArrayLiteral, Equatable {
+  public typealias Element = Value
+  public typealias Index = Int
+
+  private var entries: [Value]
+  private var membership: Set<Value>
+
+  public init() {
+    entries = []
+    membership = []
+  }
+
+  public init(arrayLiteral elements: Value...) {
+    entries = []
+    membership = []
+    for element in elements {
+      _ = insert(element)
+    }
+  }
+
+  public var startIndex: Int { entries.startIndex }
+  public var endIndex: Int { entries.endIndex }
+  public var count: Int { entries.count }
+  public var isEmpty: Bool { entries.isEmpty }
+
+  public func index(after i: Int) -> Int {
+    entries.index(after: i)
+  }
+
+  public subscript(position: Int) -> Value {
+    entries[position]
+  }
+
+  public func contains(_ value: Value) -> Bool {
+    membership.contains(value)
+  }
+
+  @discardableResult
+  public mutating func insert(_ value: Value) -> Bool {
+    let (inserted, _) = membership.insert(value)
+    if inserted {
+      entries.append(value)
+    }
+    return inserted
+  }
+
+  @discardableResult
+  public mutating func remove(_ value: Value) -> Bool {
+    guard membership.remove(value) != nil else {
+      return false
+    }
+    if let index = entries.firstIndex(of: value) {
+      entries.remove(at: index)
+    }
+    return true
+  }
+}
+
 /// An opaque type representing a regular expression.
 public typealias RegularExpressionType = NSRegularExpression
 
@@ -98,6 +157,7 @@ public indirect enum Value: Hashable {
   case seq(SeqType)
   case vector(VectorType)
   case map(MapType)
+  case set(SetType)
   case macroLiteral(Macro)
   case functionLiteral(Function)
   case builtInFunction(BuiltIn)

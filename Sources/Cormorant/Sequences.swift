@@ -181,6 +181,41 @@ struct HashmapSequenceView : SeqType {
   }
 }
 
+/// A sequence type representing a view into an immutable set.
+struct SetSequenceView : SeqType {
+  let underlying : SetType
+  let this : SetType.Index
+  let next : SeqType
+  var hashValue : Int { return underlying.reduce(0) { $0 ^ $1.hashValue } }
+
+  var first : EvalOptional<Value> {
+    if underlying.isEmpty {
+      return .Just(.nilValue)
+    }
+    precondition(this < underlying.endIndex, "SetSequenceView violates precondition: index must be valid")
+    return .Just(underlying[this])
+  }
+
+  var rest : EvalOptional<SeqType> {
+    let nextIndex = underlying.index(after: this)
+    if underlying.count > 1 && nextIndex < underlying.endIndex {
+      return .Just(SetSequenceView(underlying, next: next, position: nextIndex))
+    }
+    return .Just(next)
+  }
+
+  var isEmpty : EvalOptional<Bool> {
+    let empty = !(this < underlying.endIndex)
+    return empty ? next.isEmpty : .Just(false)
+  }
+
+  init(_ set: SetType, next: SeqType = Empty(), position: SetType.Index? = nil) {
+    underlying = set
+    self.next = next
+    this = position ?? set.startIndex
+  }
+}
+
 /// A sequence type representing an immutable non-empty persistent list whose items are stored adjacent to each other.
 final class ContiguousList : SeqType {
   private let items : [Value]
@@ -390,6 +425,7 @@ struct SeqIterator : Sequence, IteratorProtocol {
     case let .string(string): seq = StringSequenceView(string)
     case let .vector(vector): seq = VectorSequenceView(vector)
     case let .map(map): seq = HashmapSequenceView(map)
+    case let .set(set): seq = SetSequenceView(set)
     default: return nil
     }
   }

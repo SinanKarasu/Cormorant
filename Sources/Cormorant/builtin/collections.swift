@@ -36,6 +36,15 @@ func pr_hashmap(_ args: Params, _ ctx: Context) -> EvalResult {
   return .Success(.map(buffer))
 }
 
+/// Given zero or more arguments, construct a set whose components are the supplied values (or the empty set).
+func pr_hashset(_ args: Params, _ ctx: Context) -> EvalResult {
+  var buffer = SetType()
+  for item in args {
+    _ = buffer.insert(item)
+  }
+  return .Success(.set(buffer))
+}
+
 /// Given a prefix and a list argument, return a new list where the prefix is followed by the list argument.
 func pr_cons(_ args: Params, _ ctx: Context) -> EvalResult {
   let fn = ".cons"
@@ -64,9 +73,12 @@ func pr_cons(_ args: Params, _ ctx: Context) -> EvalResult {
     //  key-value pairs
     let seq = cons(first, next: HashmapSequenceView(m))
     return .Success(.seq(seq))
+  case let .set(set):
+    let seq = cons(first, next: SetSequenceView(set))
+    return .Success(.seq(seq))
   default:
     return .Failure(EvalError.invalidArgumentError(fn,
-      message: "second argument must be a string, list, vector, map, or nil"))
+      message: "second argument must be a string, list, vector, map, set, or nil"))
   }
 }
 
@@ -94,9 +106,11 @@ func pr_first(_ args: Params, _ ctx: Context) -> EvalResult {
     return .Success(v.count == 0 ? .nilValue : v[0])
   case let .map(map):
     return .Success(MapSequence(map).first() ?? .nilValue)
+  case let .set(set):
+    return .Success(set.isEmpty ? .nilValue : set[set.startIndex])
   default:
     return .Failure(EvalError.invalidArgumentError(fn,
-      message: "first argument must be a string, list, vector, map, or nil"))
+      message: "first argument must be a string, list, vector, map, set, or nil"))
   }
 }
 
@@ -131,9 +145,14 @@ func pr_rest(_ args: Params, _ ctx: Context) -> EvalResult {
     case let .Just(seq): return .Success(.seq(seq))
     case let .Error(err): return .Failure(err)
     }
+  case let .set(set):
+    switch SetSequenceView(set).rest {
+    case let .Just(seq): return .Success(.seq(seq))
+    case let .Error(err): return .Failure(err)
+    }
   default:
     return .Failure(EvalError.invalidArgumentError(fn,
-      message: "argument must be a string, list, vector, map, or nil"))
+      message: "argument must be a string, list, vector, map, set, or nil"))
   }
 }
 
@@ -182,9 +201,18 @@ func pr_next(_ args: Params, _ ctx: Context) -> EvalResult {
       }
     case let .Error(err): return .Failure(err)
     }
+  case let .set(set):
+    switch SetSequenceView(set).rest {
+    case let .Just(rest):
+      switch rest.isEmpty {
+      case let .Just(listIsEmpty): return .Success(listIsEmpty ? .nilValue : .seq(rest))
+      case let .Error(err): return .Failure(err)
+      }
+    case let .Error(err): return .Failure(err)
+    }
   default:
     return .Failure(EvalError.invalidArgumentError(fn,
-      message: "argument must be a string, list, vector, map, or nil"))
+      message: "argument must be a string, list, vector, map, set, or nil"))
   }
 }
 
@@ -207,9 +235,11 @@ func pr_seq(_ args: Params, _ ctx: Context) -> EvalResult {
     return .Success(vector.isEmpty ? .nilValue : .seq(VectorSequenceView(vector)))
   case let .map(m):
     return .Success(m.isEmpty ? .nilValue : .seq(HashmapSequenceView(m)))
+  case let .set(set):
+    return .Success(set.isEmpty ? .nilValue : .seq(SetSequenceView(set)))
   default:
     return .Failure(EvalError.invalidArgumentError(fn,
-      message: "argument must be a string, list, vector, map, or nil"))
+      message: "argument must be a string, list, vector, map, set, or nil"))
   }
 }
 
@@ -249,6 +279,10 @@ func pr_conj(_ args: Params, _ ctx: Context) -> EvalResult {
     var newMap = m
     newMap[vector[0]] = vector[1]
     return .Success(.map(newMap))
+  case let .set(set):
+    var newSet = set
+    _ = newSet.insert(toAdd)
+    return .Success(.set(newSet))
   default:
     return .Failure(EvalError.invalidArgumentError(fn, message: "first argument must be nil or a collection"))
   }
@@ -293,9 +327,11 @@ func pr_concat(_ args: Params, _ ctx: Context) -> EvalResult {
       head = vector.isEmpty ? head : VectorSequenceView(vector, next: head)
     case let .map(map):
       head = map.isEmpty ? head : HashmapSequenceView(map, next: head)
+    case let .set(set):
+      head = set.isEmpty ? head : SetSequenceView(set, next: head)
     default:
       return .Failure(EvalError.invalidArgumentError(fn,
-        message: "arguments must be strings, lists, vectors, maps, or nil"))
+        message: "arguments must be strings, lists, vectors, maps, sets, or nil"))
     }
   }
   return .Success(.seq(head))
@@ -387,8 +423,36 @@ func pr_get(_ args: Params, _ ctx: Context) -> EvalResult {
     return .Success(fallback)
   case let .map(m):
     return .Success(m[key] ?? fallback)
+  case let .set(set):
+    return .Success(set.contains(key) ? key : fallback)
   default:
     return .Success(fallback)
+  }
+}
+
+/// Given a collection and a lookup key, return whether the key is present in that collection.
+func pr_contains(_ args: Params, _ ctx: Context) -> EvalResult {
+  let fn = ".contains?"
+  guard args.count == 2 else {
+    return .Failure(EvalError.arityError(expected: "2", actual: args.count, fn))
+  }
+
+  let coll = args[0]
+  let key = args[1]
+  switch coll {
+  case .nilValue:
+    return .Success(false)
+  case let .vector(vector):
+    if case let .int(idx) = key {
+      return .Success(.bool(idx >= 0 && idx < vector.count))
+    }
+    return .Success(false)
+  case let .map(map):
+    return .Success(.bool(map[key] != nil))
+  case let .set(set):
+    return .Success(.bool(set.contains(key)))
+  default:
+    return .Failure(EvalError.invalidArgumentError(fn, message: "first argument must be a vector, map, set, or nil"))
   }
 }
 
@@ -469,6 +533,8 @@ func pr_count(_ args: Params, _ ctx: Context) -> EvalResult {
     return .Success(.int(vector.count))
   case let .map(map):
     return .Success(.int(map.count))
+  case let .set(set):
+    return .Success(.int(set.count))
   default:
     return .Failure(EvalError.invalidArgumentError(fn, message: "argument must be nil, a collection, or a string"))
   }
